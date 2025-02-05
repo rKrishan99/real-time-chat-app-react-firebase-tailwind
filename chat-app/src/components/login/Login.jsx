@@ -1,7 +1,13 @@
 import React, { useState } from "react";
 import { toast } from "react-toastify";
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+} from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
+import { auth, db, storage } from "../../lib/firebase";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import upload from "../../lib/upload";
 
 const Login = () => {
   const [avatar, setAvatar] = useState({
@@ -23,18 +29,29 @@ const Login = () => {
   const handleRegister = async (e) => {
     e.preventDefault();
     setLoading(true);
+
     const formData = new FormData(e.target);
 
     const { username, email, password } = Object.fromEntries(formData);
 
     try {
+      // Step 1: Create user in Firebase Authentication
       const response = await createUserWithEmailAndPassword(
         auth,
         email,
         password
       );
-      const imgUrl = await upload(avatar.file);
 
+      // Step 2: Upload avatar image to Firebase Storage
+      let imgUrl = "";
+      if (avatar.file) {
+        imgUrl = await upload(avatar.file); // Upload avatar image
+      } else {
+        console.warn("No avatar file provided. Using default avatar.");
+        imgUrl = "./avatar.png"; // Default avatar URL
+      }
+
+      // Step 3: Save user data to Firestore
       await setDoc(doc(db, "users", response.user.uid), {
         username,
         email,
@@ -43,14 +60,21 @@ const Login = () => {
         blocked: [],
       });
 
+      // Step 4: Initialize user chats in Firestore
       await setDoc(doc(db, "userchats", response.user.uid), {
         chats: [],
       });
 
       toast.success("Account created! You can login now!");
     } catch (err) {
-      console.log(err);
-      toast.error(err.message);
+      console.error(err);
+      if (err.code === "auth/email-already-in-use") {
+        toast.error(
+          "This email is already in use. Please use a different email."
+        );
+      } else {
+        toast.error(err.message || "An error occurred. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -64,20 +88,18 @@ const Login = () => {
 
     const { email, password } = Object.fromEntries(formData);
 
-    try{
-
+    try {
       await signInWithEmailAndPassword(auth, email, password);
-
-    }catch (err) {
+    } catch (err) {
       console.log(err);
       toast.error(err.message);
-    }finally{
+    } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="w-full h-full flex items-center gap-16">
+    <div className="w-[100%] h-[100%] flex items-center justify-between gap-16">
       <div className="flex-1 flex flex-col items-center gap-10">
         <h2>Welcome back,</h2>
         <form
@@ -86,7 +108,7 @@ const Login = () => {
         >
           <input
             className="p-4 border-none outline-none bg-slate-800 text-white rounded-lg"
-            type="text"
+            type="email"
             placeholder="Email"
             name="email"
           />
@@ -99,11 +121,11 @@ const Login = () => {
           <button
             disabled={loading}
             className={`w-full p-2 border-none text-lg font-medium rounded-lg cursor-pointer
-              ${
-                loading
-                  ? "bg-sky-400 cursor-not-allowed opacity-50"
-                  : "bg-sky-600 text-white hover:bg-sky-700"
-              }`}
+            ${
+              loading
+                ? "bg-sky-400 cursor-not-allowed opacity-50"
+                : "bg-sky-600 text-white hover:bg-sky-700"
+            }`}
           >
             Sign In
           </button>
@@ -141,7 +163,7 @@ const Login = () => {
           />
           <input
             className="p-4 border-none outline-none bg-slate-800 text-white rounded-lg"
-            type="text"
+            type="email"
             placeholder="Email"
             name="email"
           />
@@ -152,13 +174,14 @@ const Login = () => {
             name="password"
           />
           <button
+            type="submit"
             disabled={loading}
             className={`w-full p-2 border-none text-lg font-medium rounded-lg cursor-pointer
-    ${
-      loading
-        ? "bg-sky-400 cursor-not-allowed opacity-50"
-        : "bg-sky-600 text-white hover:bg-sky-700"
-    }`}
+            ${
+              loading
+                ? "bg-sky-400 cursor-not-allowed opacity-50"
+                : "bg-sky-600 text-white hover:bg-sky-700"
+            }`}
           >
             Sign Up
           </button>
